@@ -33,9 +33,10 @@ class Runtime:
             self._total_memory += size
             return handle
         if op is Opcode.FREE:
-            handle = self._require_handle(args.get("handle"))
-            buffer = self._buffers.pop(handle)
+            handle = args.get("handle")
+            buffer = self._require_handle(handle)
             self._total_memory -= buffer.size
+            del self._buffers[handle]
             return None
         if op is Opcode.UPLOAD:
             buffer = self._require_handle(args.get("handle"))
