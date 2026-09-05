@@ -1,7 +1,9 @@
 """Execution runtime for validated NeverGPU command streams."""
 
 from .commands import Command, CommandValidationError, Opcode, SandboxPolicy, validate_command
+from .cpu_kernel import execute_kernel
 from .device import Device
+from .ir import Kernel
 
 
 class Runtime:
@@ -18,7 +20,6 @@ class Runtime:
         validate_command(command, self.policy)
         op = command.opcode
         args = command.args
-
         if op is Opcode.DEVICE_INFO:
             return self.device.info
         if op is Opcode.ALLOC:
@@ -45,11 +46,18 @@ class Runtime:
             return len(data)
         if op is Opcode.DOWNLOAD:
             buffer = self._require_handle(args.get("handle"))
-            size = args.get("size", buffer.size - args.get("offset", 0))
-            return buffer.read(args.get("offset", 0), size)
+            offset = args.get("offset", 0)
+            size = args.get("size", buffer.size - offset)
+            return buffer.read(offset, size)
         if op is Opcode.DISPATCH:
             kernel = args.get("kernel")
-            return self.device.dispatch(kernel, args["work_items"], workers=args.get("workers"))
+            if not isinstance(kernel, Kernel):
+                raise CommandValidationError("DISPATCH requires a NeverGPU Kernel")
+            handles = set()
+            for instruction in kernel.instructions:
+                handles.update(h for h in (instruction.dst, instruction.src_a, instruction.src_b) if h is not None)
+            buffers = {h: self._require_handle(h).data for h in handles}
+            return self.device.dispatch(lambda index: execute_kernel(kernel, buffers, index), args["work_items"], workers=args.get("workers"))
         if op is Opcode.WAIT:
             return None
         raise CommandValidationError(f"unsupported opcode: {op}")
@@ -63,7 +71,7 @@ class Runtime:
         self.device.close()
 
     def __enter__(self):
-        return self
+        self.close()
 
     def __exit__(self, *_):
         self.close()
