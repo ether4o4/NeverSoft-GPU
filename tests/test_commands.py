@@ -13,6 +13,17 @@ def test_allocate_upload_download_free():
         runtime.execute(command(Opcode.FREE, handle=handle))
 
 
+def test_free_releases_memory_and_invalidates_handle():
+    policy = SandboxPolicy(max_total_memory=16)
+    with Runtime(policy=policy) as runtime:
+        handle = runtime.execute(command(Opcode.ALLOC, size=16))
+        runtime.execute(command(Opcode.FREE, handle=handle))
+        with pytest.raises(CommandValidationError):
+            runtime.execute(command(Opcode.DOWNLOAD, handle=handle, size=1))
+        new_handle = runtime.execute(command(Opcode.ALLOC, size=16))
+        assert new_handle != handle
+
+
 def test_invalid_handle_rejected():
     with Runtime() as runtime:
         with pytest.raises(CommandValidationError):
