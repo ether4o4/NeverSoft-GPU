@@ -18,8 +18,7 @@ class Runtime:
 
     def execute(self, command: Command):
         validate_command(command, self.policy)
-        op = command.opcode
-        args = command.args
+        op, args = command.opcode, command.args
         if op is Opcode.DEVICE_INFO:
             return self.device.info
         if op is Opcode.ALLOC:
@@ -41,14 +40,11 @@ class Runtime:
         if op is Opcode.UPLOAD:
             buffer = self._require_handle(args.get("handle"))
             data = bytes(args["data"])
-            offset = args.get("offset", 0)
-            buffer.write(offset, data)
+            buffer.write(data, args.get("offset", 0))
             return len(data)
         if op is Opcode.DOWNLOAD:
             buffer = self._require_handle(args.get("handle"))
-            offset = args.get("offset", 0)
-            size = args.get("size", buffer.size - offset)
-            return buffer.read(offset, size)
+            return buffer.read(args.get("size"), args.get("offset", 0))
         if op is Opcode.DISPATCH:
             kernel = args.get("kernel")
             if not isinstance(kernel, Kernel):
@@ -56,7 +52,7 @@ class Runtime:
             handles = set()
             for instruction in kernel.instructions:
                 handles.update(h for h in (instruction.dst, instruction.src_a, instruction.src_b) if h is not None)
-            buffers = {h: self._require_handle(h).data for h in handles}
+            buffers = {h: self._require_handle(h)._data for h in handles}
             return self.device.dispatch(lambda index: execute_kernel(kernel, buffers, index), args["work_items"], workers=args.get("workers"))
         if op is Opcode.WAIT:
             return None
@@ -71,7 +67,7 @@ class Runtime:
         self.device.close()
 
     def __enter__(self):
-        self.close()
+        return self
 
     def __exit__(self, *_):
         self.close()
